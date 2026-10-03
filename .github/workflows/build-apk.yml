@@ -10,15 +10,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v3
 
-      - name: Create Full Android Project
+      - name: Clean old files and Create Project
         run: |
-          rm -rf app bsnl_sms_app
+          rm -rf app bsnl_sms_app .gradle
+          rm -f build.gradle
+          cat > settings.gradle <<'EOF'
+          include ":app"
+          EOF
+          cat > build.gradle <<'EOF'
+          // empty root
+          EOF
           mkdir -p app/src/main/java/com/bsnl/noc
           mkdir -p app/src/main/res/layout
-          echo 'include ":app"' > settings.gradle
           
-          cat > app/build.gradle <<'GRADLE'
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.2.0' apply false }
           plugins { id 'com.android.application' }
           android {
             namespace 'com.bsnl.noc'
@@ -27,16 +35,13 @@ jobs:
               applicationId "com.bsnl.noc"
               minSdk 24
               targetSdk 34
-              versionCode 2
-              versionName "2.0"
+              versionCode 3
+              versionName "3.0"
             }
           }
-          dependencies {
-            implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          GRADLE
-
-          cat > app/src/main/AndroidManifest.xml <<'MANIFEST'
+          EOF
+          
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
             <uses-permission android:name="android.permission.RECEIVE_SMS"/>
@@ -50,9 +55,9 @@ jobs:
               </receiver>
             </application>
           </manifest>
-          MANIFEST
-
-          cat > app/src/main/java/com/bsnl/noc/MainActivity.kt <<'KT'
+          EOF
+          
+          cat > app/src/main/java/com/bsnl/noc/MainActivity.kt <<'EOF'
           package com.bsnl.noc
           import android.os.Bundle
           import android.widget.TextView
@@ -60,13 +65,12 @@ jobs:
           class MainActivity : AppCompatActivity() {
             override fun onCreate(b: Bundle?) {
               super.onCreate(b)
-              val count = getSharedPreferences("bsnl_noc", 0).all.size
-              setContentView(TextView(this).apply { text = "BSNL NOC\nLIVE OPEN: $count sites\nYour 28 towers mapped" })
+              setContentView(TextView(this).apply { text = "BSNL NOC\nOPEN Sites: ${getSharedPreferences("bsnl_noc",0).all.size}\n28 towers mapped" })
             }
           }
-          KT
-
-          cat > app/src/main/java/com/bsnl/noc/SmsReceiver.kt <<'KT'
+          EOF
+          
+          cat > app/src/main/java/com/bsnl/noc/SmsReceiver.kt <<'EOF'
           package com.bsnl.noc
           import android.content.*
           import android.provider.Telephony
@@ -77,20 +81,15 @@ jobs:
                 val body = m.displayMessageBody ?: ""
                 val node = Regex("Node:\\s*([^,\\s]+)").find(body)?.groupValues?.get(1) ?: continue
                 val state = Regex("State:\\s*([^,\\s]+)").find(body)?.groupValues?.get(1) ?: ""
-                val prefs = c.getSharedPreferences("bsnl_noc", Context.MODE_PRIVATE)
-                if (state.equals("Open", true)) prefs.edit().putString(node, node).apply() else prefs.edit().remove(node).apply()
+                val p = c.getSharedPreferences("bsnl_noc", 0)
+                if (state.equals("Open", true)) p.edit().putString(node, node).apply() else p.edit().remove(node).apply()
               }
             }
           }
-          KT
-
-          cat > app/src/main/res/layout/activity_main.xml <<'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"><TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BSNL NOC"/></LinearLayout>
-          XML
+          EOF
 
       - name: Build APK
-        run: gradle :app:assembleDebug
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
